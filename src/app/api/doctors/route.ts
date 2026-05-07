@@ -1,0 +1,273 @@
+import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
+
+// Initialize Supabase client with service role key for admin access
+// This code runs on the server, so it's safe to use the service role key here
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+
+// Create a Supabase client with the service role key for admin access
+// This bypasses RLS policies completely
+const adminSupabase = createClient(supabaseUrl, supabaseServiceKey, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false
+  }
+});
+
+// Create a regular client using the public anon key as fallback
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const regularSupabase = createClient(supabaseUrl, supabaseAnonKey);
+
+export async function POST(request: Request) {
+  try {
+    const doctorData = await request.json();
+    
+    // Log the received data for debugging
+    console.log('API received doctor data:', doctorData);
+    
+    // Validate required fields
+    const requiredFields = ['name', 'email', 'speciality', 'degree', 'experience', 'fees', 'about', 'image'];
+    for (const field of requiredFields) {
+      if (!doctorData[field]) {
+        return NextResponse.json(
+          { error: `Missing required field: ${field}` },
+          { status: 400 }
+        );
+      }
+    }
+    
+    // Check if a doctor with this email already exists
+    const { data: existingDoctor, error: checkError } = await adminSupabase
+      .from('doctors')
+      .select('email')
+      .eq('email', doctorData.email)
+      .maybeSingle();
+    
+    if (checkError) {
+      console.error('Error checking existing doctor:', checkError);
+      return NextResponse.json(
+        { error: `Database error: ${checkError.message}` },
+        { status: 500 }
+      );
+    }
+    
+    if (existingDoctor) {
+      return NextResponse.json(
+        { error: `A doctor with email ${doctorData.email} already exists` },
+        { status: 409 }
+      );
+    }
+    
+    // Ensure slots_booked is properly initialized
+    if (!doctorData.slots_booked) {
+      doctorData.slots_booked = {};
+    }
+    
+    // Ensure address is properly initialized
+    if (!doctorData.address) {
+      doctorData.address = { line1: '', city: '', state: '', zip: '' };
+    }
+
+    // Insert doctor data using admin privileges
+    const { data, error } = await adminSupabase
+      .from('doctors')
+      .insert([doctorData])
+      .select();
+    
+    if (error) {
+      console.error('Supabase error:', error);
+      
+      // Return error response
+      return NextResponse.json({
+        success: false,
+        error: `Failed to add doctor: ${error.message}`
+      }, { status: 500 });
+    }
+    
+    // Return success response with the inserted data
+    return NextResponse.json({
+      success: true,
+      data
+    });
+  } catch (error) {
+    console.error('Server error:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function GET(request: Request) {
+  try {
+    // Parse query parameters
+    const url = new URL(request.url);
+    const speciality = url.searchParams.get('speciality');
+    const available = url.searchParams.get('available');
+    const searchQuery = url.searchParams.get('search');
+    const limitParam = url.searchParams.get('limit');
+    const limit = limitParam ? parseInt(limitParam) : undefined;
+    
+    // Start building the query
+    let query = adminSupabase.from('doctors').select('*');
+    
+    // Apply filters if provided
+    if (speciality && speciality !== 'All Specialities') {
+      query = query.eq('speciality', speciality);
+    }
+    
+    if (available === 'true') {
+      query = query.eq('available', true);
+    }
+    
+    // Apply limit if provided
+    if (limit && !isNaN(limit)) {
+      query = query.limit(limit);
+    }
+    
+    // Execute the query
+    const { data, error } = await query;
+    
+    if (error) {
+      console.error('Error fetching doctors:', error);
+      const mockDoctors = getMockDoctors(speciality, available === 'true', limit);
+      return NextResponse.json({
+        success: false,
+        error: `Failed to fetch doctors: ${error.message}`,
+        doctors: mockDoctors,
+        count: mockDoctors.length,
+        mockData: true
+      }, { status: 200 });
+    }
+    
+    // If there's no data, return mock data
+    if (!data || data.length === 0) {
+      const mockDoctors = getMockDoctors(speciality, available === 'true', limit);
+      return NextResponse.json({
+        success: true,
+        doctors: mockDoctors,
+        count: mockDoctors.length,
+        mockData: true,
+        note: 'Using mock data as no doctors were found.'
+      });
+    }
+    
+    // If we have data, apply search filter in memory if provided
+    let filteredData = [...data];
+    if (searchQuery && filteredData.length > 0) {
+      const query = searchQuery.toLowerCase();
+      filteredData = filteredData.filter(doctor => 
+        doctor.name.toLowerCase().includes(query) || 
+        doctor.speciality.toLowerCase().includes(query) ||
+        doctor.about.toLowerCase().includes(query)
+      );
+    }
+    
+    // Return the filtered data
+    return NextResponse.json({ 
+      success: true,
+      doctors: filteredData,
+      count: filteredData.length,
+      mockData: false
+    });
+  } catch (error) {
+    console.error('Server error:', error);
+    const mockDoctors = getMockDoctors();
+    return NextResponse.json({ 
+      success: false,
+      error: 'Internal server error',
+      doctors: mockDoctors,
+      count: mockDoctors.length,
+      mockData: true
+    }, { status: 200 });
+  }
+}
+
+// Helper function to get mock doctors
+function getMockDoctors(speciality?: string | null, availableOnly?: boolean, limit?: number) {
+  // Create some mock doctors for development
+  const mockDoctors = [
+    {
+      id: '11111111-1111-4111-8111-111111111111',
+      name: 'Dr. Sarah Johnson',
+      email: 'sarah.johnson@example.com',
+      speciality: 'Cardiology',
+      degree: 'MD, FACC',
+      experience: '10+ years',
+      fees: 1500,
+      about: 'Board-certified cardiologist specializing in preventive cardiology and heart failure management.',
+      available: true,
+      image: 'https://randomuser.me/api/portraits/women/44.jpg',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      slots_booked: {},
+      address: { line1: '123 Medical Center', city: 'New York', state: 'NY', zip: '10001' }
+    },
+    {
+      id: '22222222-2222-4222-8222-222222222222',
+      name: 'Dr. Michael Chen',
+      email: 'michael.chen@example.com',
+      speciality: 'Neurology',
+      degree: 'MD, PhD',
+      experience: '15+ years',
+      fees: 1800,
+      about: 'Neurologist specializing in movement disorders and neurodegenerative diseases.',
+      available: true,
+      image: 'https://randomuser.me/api/portraits/men/32.jpg',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      slots_booked: {},
+      address: { line1: '456 Brain Center', city: 'Boston', state: 'MA', zip: '02108' }
+    },
+    {
+      id: '33333333-3333-4333-8333-333333333333',
+      name: 'Dr. Emily Rodriguez',
+      email: 'emily.rodriguez@example.com',
+      speciality: 'Pulmonology',
+      degree: 'MD',
+      experience: '8+ years',
+      fees: 1300,
+      about: 'Pulmonologist with expertise in respiratory disorders and sleep medicine.',
+      available: false,
+      image: 'https://randomuser.me/api/portraits/women/68.jpg',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      slots_booked: {},
+      address: { line1: '789 Lung Center', city: 'Chicago', state: 'IL', zip: '60601' }
+    },
+    {
+      id: '44444444-4444-4444-8444-444444444444',
+      name: 'Dr. Rajiv Sharma',
+      email: 'rajiv.sharma@example.com',
+      speciality: 'Orthopedics',
+      degree: 'MBBS, MS',
+      experience: '12+ years',
+      fees: 1600,
+      about: 'Orthopedic surgeon specializing in joint replacements and sports injuries.',
+      available: true,
+      image: 'https://randomuser.me/api/portraits/men/45.jpg',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      slots_booked: {},
+      address: { line1: '321 Bone & Joint Center', city: 'Delhi', state: 'DL', zip: '110001' }
+    }
+  ];
+  
+  // Filter mock data based on parameters
+  let filteredMockData = [...mockDoctors];
+  
+  if (speciality && speciality !== 'All Specialities') {
+    filteredMockData = filteredMockData.filter(d => d.speciality === speciality);
+  }
+  
+  if (availableOnly) {
+    filteredMockData = filteredMockData.filter(d => d.available);
+  }
+  
+  if (limit && !isNaN(limit)) {
+    filteredMockData = filteredMockData.slice(0, limit);
+  }
+  
+  return filteredMockData;
+}

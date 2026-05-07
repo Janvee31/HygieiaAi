@@ -1,0 +1,568 @@
+HYGIEIA MODEL TRAINING DOCUMENTATION
+====================================
+
+Project: Hygieia AI Healthcare Platform
+Location: C:\Users\Sayan\Desktop\Projects\Hygieia
+Main training folder: backend\training
+Main model output folders: backend\models and backend\saved_models
+
+Purpose
+-------
+This document summarizes the machine learning and deep learning models actually used in the training scripts of this project. It also explains why those models were selected for each disease prediction task.
+
+Important note about GitHub
+---------------------------
+Large datasets and trained model artifacts should not be pushed directly to a normal GitHub repository.
+
+GitHub warns when a file is larger than 50 MiB and blocks regular Git files larger than 100 MiB. This project includes large datasets, image folders, notebooks, and PyTorch model files. These are better shared separately through a pendrive, external drive, Google Drive, OneDrive, Hugging Face, Kaggle, or Git LFS.
+
+Recommended sharing approach:
+1. Push only source code, SQL files, and documentation to GitHub.
+2. Keep backend\data, backend\model, backend\models, backend\saved_models, and large notebooks outside normal Git.
+3. Share the large folders separately with the friend who needs to run the full project.
+
+
+1. General Disease Prediction
+-----------------------------
+Training script:
+backend\training\train_disease_model.py
+
+Dataset used:
+backend\data\clean_dataset.tsv
+
+Target:
+Disease label, encoded using sklearn LabelEncoder.
+
+Model actually trained:
+XGBoost Classifier
+
+Important code choices:
+- xgboost.XGBClassifier
+- objective = multi:softprob
+- GridSearchCV used for hyperparameter tuning
+- Parameters tuned include max_depth, learning_rate, n_estimators, subsample, and colsample_bytree
+- LabelEncoder saved as disease_label_encoder.pkl
+- Model saved as disease_prediction_model.json
+
+Why XGBoost was used:
+General disease prediction is a multi-class tabular classification problem based on many symptom indicators. XGBoost is a strong choice for this because it handles structured tabular data very well, captures non-linear relationships between symptoms, supports multi-class probability output, and usually performs better than a single decision tree or simple linear model on mixed medical-style feature sets.
+
+Why this model is suitable here:
+- Good for tabular symptom features.
+- Handles many input columns.
+- Gives probability-style output for multiple disease classes.
+- Provides feature importance, useful for explaining which symptoms influenced the prediction.
+- Works well with moderate-sized medical datasets without needing a deep neural network.
+
+
+2. Diabetes Prediction
+----------------------
+Training script:
+backend\training\train_diabetes_model.py
+
+Dataset used:
+backend\data\diabetes.csv
+
+Target:
+Outcome
+
+Models actually trained:
+- Logistic Regression
+- Random Forest Classifier
+- Gradient Boosting Classifier
+- Support Vector Machine
+- Soft Voting Ensemble using the above models
+
+Important code choices:
+- Missing zero values in Glucose, BloodPressure, SkinThickness, Insulin, and BMI are replaced with median values.
+- StandardScaler is used in model pipelines.
+- GridSearchCV is used for model tuning.
+- VotingClassifier uses soft voting.
+- Best model is selected from trained candidates and saved as the default diabetes model.
+
+Why these models were used:
+Diabetes prediction is a small-to-medium tabular binary classification task. The script trains multiple model families because each one captures a different type of pattern:
+
+Logistic Regression:
+- Good baseline model.
+- Easy to interpret.
+- Useful when medical indicators have mostly linear relationships with risk.
+
+Random Forest:
+- Handles non-linear feature interactions.
+- Robust to noisy input.
+- Gives feature importance.
+
+Gradient Boosting:
+- Often performs strongly on structured tabular datasets.
+- Learns difficult decision boundaries by combining weak learners.
+
+SVM:
+- Useful for smaller datasets.
+- Can model non-linear separation with kernels.
+
+Soft Voting Ensemble:
+- Combines the strengths of all four models.
+- Reduces dependence on a single model's weakness.
+- Can improve stability when individual model performance is close.
+
+Why the final choice is made this way:
+The script compares model performance and saves the best-performing model. This is practical because diabetes risk features can behave differently depending on preprocessing and dataset distribution.
+
+
+3. Heart Disease Prediction
+---------------------------
+Training script:
+backend\training\train_heart_disease_model.py
+
+Dataset used:
+backend\data\Heart_Disease_Prediction.csv
+
+Target:
+Heart Disease
+
+Models actually trained:
+- Random Forest Classifier
+- Gradient Boosting Classifier
+
+Important code choices:
+- Categorical features are one-hot encoded.
+- StandardScaler is used in the pipeline.
+- GridSearchCV is used for tuning.
+- Random Forest feature importance is generated.
+- Best model is selected by accuracy and saved as the default heart disease model.
+
+Why Random Forest was used:
+Heart disease risk depends on interactions between age, cholesterol, blood pressure, ECG-related values, chest pain type, and other indicators. Random Forest is useful because it captures interactions and non-linear relationships without requiring heavy feature engineering.
+
+Why Gradient Boosting was used:
+Gradient Boosting is also strong on tabular medical data and can improve performance by building trees sequentially, where each tree corrects mistakes from earlier trees.
+
+Why these models fit this task:
+- Both are well-suited for tabular patient records.
+- Both can handle non-linear medical risk patterns.
+- Random Forest gives explainable feature importance.
+- Gradient Boosting often improves predictive accuracy on structured data.
+
+
+4. Lung Cancer Prediction
+-------------------------
+Training script:
+backend\training\train_lung_cancer_model.py
+
+Dataset used:
+backend\data\lung_cancer.csv
+
+Target:
+The script searches for a target column containing "cancer" or "lung"; otherwise it uses the last column.
+
+Models actually trained:
+- Random Forest Classifier
+- XGBoost Classifier
+- Support Vector Machine
+
+Feature selection methods actually used:
+- Random Forest feature importance
+- Recursive Feature Elimination using linear SVC
+- XGBoost feature importance
+- SelectFromModel using XGBoost with median threshold
+
+Important code choices:
+- LabelEncoder is used for categorical columns.
+- StandardScaler is used in pipelines.
+- StratifiedKFold is used for cross-validation.
+- GridSearchCV is scored using ROC AUC.
+- Best model is selected by AUC.
+
+Why these models were used:
+Lung cancer risk data contains symptom and lifestyle indicators such as smoking, coughing, fatigue, wheezing, shortness of breath, and chest pain. These relationships may be non-linear and may involve feature interactions.
+
+Random Forest:
+- Works well with symptom-based tabular data.
+- Gives feature importance.
+- Robust for small and medium datasets.
+
+XGBoost:
+- Strong gradient-boosted tree model for structured data.
+- Often gives high AUC on binary risk prediction.
+- Useful for feature selection and importance ranking.
+
+SVM:
+- Good comparison model for binary classification.
+- Can perform well on smaller datasets after scaling.
+
+Why feature selection was used:
+Lung cancer datasets can include correlated symptom fields. Feature selection reduces noisy or redundant inputs and helps the model focus on the most predictive risk factors.
+
+
+5. Chronic Kidney Disease Prediction
+------------------------------------
+Training script:
+backend\training\train_kidney_disease_model.py
+
+Dataset used:
+backend\data\chronic_kidney_dataset.csv
+
+Target:
+The script searches for class, disease, or ckd in the column name; otherwise it uses the last column.
+
+Models actually trained:
+- Random Forest Classifier
+- Logistic Regression
+- Gradient Boosting Classifier
+- Support Vector Machine
+- Soft Voting Ensemble
+
+Preprocessing actually used:
+- KNNImputer for numeric values
+- SimpleImputer for categorical values
+- StandardScaler for numeric features
+- OneHotEncoder for categorical features
+- ColumnTransformer to combine numeric and categorical preprocessing
+- VarianceThreshold to remove near-constant features
+- SelectKBest with f_classif for selected models
+
+Important code choices:
+- StratifiedKFold cross-validation
+- GridSearchCV using ROC AUC
+- Best model selected by AUC
+- Best model saved as kidney_disease_model.pkl
+
+Why these models were used:
+Kidney disease datasets usually contain a mix of numeric lab values and categorical clinical values. The script uses a full preprocessing pipeline because missing values and mixed column types are expected.
+
+Random Forest:
+- Handles mixed patterns and non-linear relationships.
+- Good for clinical tabular data.
+
+Logistic Regression:
+- Provides an interpretable baseline.
+- Useful for checking whether simple weighted clinical indicators are enough.
+
+Gradient Boosting:
+- Strong performance on tabular medical data.
+- Can learn complex risk patterns.
+
+SVM:
+- Useful for binary classification after scaling.
+- Provides a different decision boundary compared with tree models.
+
+Voting Ensemble:
+- Combines different classifiers to improve robustness.
+- Helps when no single model is consistently dominant.
+
+Why this approach is suitable:
+Kidney disease prediction needs robust missing-value handling and comparison across several model families. Selecting the final model by AUC is appropriate because disease datasets can be imbalanced and accuracy alone may be misleading.
+
+
+6. Liver Disease Prediction
+---------------------------
+Training script:
+backend\training\train_liver_disease_model.py
+
+Dataset used:
+backend\data\indian_liver_patient.csv
+
+Target:
+Dataset column, mapped to binary values.
+
+Models actually trained:
+- Random Forest Classifier
+- Gradient Boosting Classifier
+- AdaBoost Classifier
+
+Preprocessing actually used:
+- SimpleImputer with median strategy for numeric features
+- SimpleImputer with most_frequent strategy for categorical features
+- StandardScaler
+- OneHotEncoder
+- ColumnTransformer
+- SelectKBest with f_classif
+
+Important code choices:
+- StratifiedKFold cross-validation
+- GridSearchCV using ROC AUC
+- Best model selected by AUC
+- Best model saved as liver_disease_model.pkl
+
+Why these models were used:
+Liver disease prediction uses structured patient data such as bilirubin, enzymes, proteins, age, and gender. Tree-based ensemble models are suitable because lab values may interact in non-linear ways.
+
+Random Forest:
+- Stable and robust for clinical datasets.
+- Provides a strong baseline for non-linear tabular classification.
+
+Gradient Boosting:
+- Can capture subtle additive risk patterns.
+- Often performs better than bagging when tuned properly.
+
+AdaBoost:
+- Lightweight boosting model.
+- Useful for comparison against stronger boosting and forest methods.
+
+Why SelectKBest was used:
+The liver dataset has multiple lab markers. SelectKBest helps keep the most statistically useful features and reduce noise before classification.
+
+
+7. Stroke Prediction
+--------------------
+Training script:
+backend\training\train_stroke_model.py
+
+Dataset used:
+Synthetic data generated in the script using sklearn.datasets.make_classification.
+
+Target:
+Binary stroke risk label.
+
+Model actually trained:
+Random Forest Classifier inside a Pipeline
+
+Important code choices:
+- make_classification creates 1000 samples.
+- 10 features are generated and then scaled into realistic-looking values.
+- StandardScaler is used.
+- RandomForestClassifier uses n_estimators=50, max_depth=8, class_weight='balanced'.
+- Model saved as backend\saved_models\stroke_model.pkl.
+
+Why Random Forest was used:
+Stroke risk depends on several interacting risk factors, such as age, hypertension, heart disease, glucose, BMI, and smoking status. Random Forest can model these interactions and is less sensitive to individual noisy features.
+
+Why balanced class weight was used:
+Stroke is represented as a minority class in the generated data. The class_weight='balanced' setting helps the model pay more attention to positive stroke-risk samples instead of mostly learning the majority no-stroke class.
+
+Important limitation:
+This script trains on synthetic data, not a real clinical stroke dataset. It is suitable for demonstration and application flow testing, but not for real medical use.
+
+
+8. Thyroid Disease Prediction
+-----------------------------
+Training script:
+backend\training\train_thyroid_model.py
+
+Dataset used:
+Synthetic data generated in the script using sklearn.datasets.make_classification.
+
+Target:
+Binary thyroid disease label.
+
+Model actually trained:
+Random Forest Classifier inside a Pipeline
+
+Important code choices:
+- make_classification creates 1000 samples.
+- 21 features are generated to match the prediction endpoint.
+- Features include age, sex, TSH, T3, TT4, T4U, FTI, medication flags, surgery flags, pregnancy flag, and other binary medical flags.
+- StandardScaler is used.
+- RandomForestClassifier uses n_estimators=50, max_depth=8, class_weight='balanced'.
+- Model saved as backend\saved_models\thyroid_model.pkl.
+
+Why Random Forest was used:
+Thyroid disease risk can depend on combinations of hormone values and medical history flags. Random Forest can capture these feature interactions while remaining fast enough for local training and inference.
+
+Why balanced class weight was used:
+The generated data uses a minority positive class. Balanced weighting reduces bias toward the negative class.
+
+Important limitation:
+This model is trained using synthetic data. It is useful for demo workflows and frontend/backend integration, but not for real diagnosis.
+
+
+9. Breast Cancer Image Detection
+--------------------------------
+Training scripts:
+backend\training\train_breast_cancer_image_model.py
+backend\training\train_breast_cancer_simplified.py
+
+Dataset used:
+backend\data\Breast Cancer
+
+Targets:
+Binary classification:
+- BENIGN
+- MALIGNANT
+
+Models actually used:
+- EfficientNet B0 in train_breast_cancer_image_model.py for normal mode
+- MobileNetV2 in train_breast_cancer_image_model.py for fast mode
+- ResNet18 in train_breast_cancer_simplified.py
+
+Important code choices:
+- PyTorch and torchvision are used.
+- Transfer learning is used with pretrained CNN backbones.
+- Final classifier layer is replaced for binary classification.
+- CrossEntropyLoss is used.
+- Adam optimizer is used.
+- ReduceLROnPlateau scheduler is used.
+- Data augmentation includes resize, random horizontal flip, random rotation, color jitter, normalization.
+- Mixed precision training is supported.
+- Models are saved in .pth and full .pth formats for inference.
+
+Why EfficientNet B0 was used:
+EfficientNet B0 gives strong image classification performance with fewer parameters than many older CNNs. It is a good choice for mammography-style classification where image features can be subtle and transfer learning is useful.
+
+Why MobileNetV2 was used in fast mode:
+MobileNetV2 is lightweight and trains faster. It is useful for hackathon/demo mode or machines with limited GPU resources.
+
+Why ResNet18 was used in the simplified script:
+ResNet18 is a reliable transfer learning baseline. It trains quickly, is easier to debug, and performs well enough for a demo medical image classifier.
+
+Why transfer learning was used:
+Medical image datasets are often not large enough to train a CNN from scratch. Pretrained ImageNet backbones provide reusable low-level visual features such as edges, textures, and shapes, which can be fine-tuned for medical classification.
+
+
+10. Skin Cancer Image Classification
+------------------------------------
+Training script:
+backend\training\train_skin_cancer_model.py
+
+Dataset used:
+backend\data\Skin Cancer
+
+Target classes:
+- Melanoma
+- Nevus
+- Basal Cell Carcinoma
+- Actinic Keratosis
+- Benign Keratosis
+- Dermatofibroma
+- Vascular Lesion
+
+Model actually trained:
+MobileNetV2
+
+Important code choices:
+- PyTorch and torchvision are used.
+- MobileNetV2 is loaded with pretrained weights.
+- Final classifier layer is replaced for 7 classes.
+- CrossEntropyLoss is used.
+- Adam optimizer is used.
+- ReduceLROnPlateau scheduler is used.
+- Data augmentation and normalization are used.
+- Model saved for inference using save_model_for_inference.
+
+Why MobileNetV2 was used:
+Skin cancer classification can involve many images, and MobileNetV2 is fast and lightweight. It is suitable for a demo system because it trains faster than heavier CNNs while still giving reasonable transfer learning performance.
+
+Why this model fits the project:
+- Faster training on local hardware.
+- Lower memory usage.
+- Good enough for prototype image classification.
+- Can be deployed more easily than larger CNNs.
+
+
+11. Brain Tumor MRI Classification
+----------------------------------
+Training script:
+backend\training\train_brain_tumor_model.py
+
+Dataset used:
+backend\data\Brain Tumor\Images
+
+Target classes:
+- No Tumor
+- Glioma
+- Meningioma
+- Pituitary
+
+Model actually trained:
+ResNet18
+
+Important code choices:
+- PyTorch and torchvision are used.
+- ResNet18 is loaded with pretrained weights.
+- Final fully connected layer is replaced for 4 classes.
+- CrossEntropyLoss is used.
+- Adam optimizer is used.
+- ReduceLROnPlateau scheduler is used.
+- Early stopping is used.
+- Mixed precision training is supported.
+- Model saved for inference using save_model_for_inference.
+
+Why ResNet18 was used:
+Brain tumor MRI classification benefits from convolutional feature extraction, but the project is optimized for local/demo training. ResNet18 is a good balance between speed, accuracy, and simplicity. It is lighter than ResNet50 and EfficientNet variants, but still strong enough for transfer learning on medical image classification.
+
+Why this model fits the project:
+- Good CNN baseline for MRI classification.
+- Faster to train than deeper residual networks.
+- Less likely to overfit small medical image datasets compared with very large networks.
+- Easy to save and reload for inference.
+
+
+12. Shared Image Model Utilities
+--------------------------------
+Utility script:
+backend\training\image_model_utils.py
+
+Supported CNN backbones:
+- ResNet18
+- ResNet50
+- EfficientNet B0
+- MobileNetV2
+
+Shared training behavior:
+- Uses PyTorch Dataset and DataLoader.
+- Loads images using PIL, with OpenCV fallback.
+- Resizes images to 224x224.
+- Applies augmentation during training.
+- Applies ImageNet normalization.
+- Uses train, validation, and test loaders.
+- Saves model state_dict, full PyTorch model, class mapping, and model metadata.
+
+Why this utility exists:
+The breast cancer, skin cancer, and brain tumor tasks all follow the same image-classification workflow. Keeping common dataset loading, augmentation, model creation, training, evaluation, and saving logic in one utility file reduces duplicate code and keeps image training consistent.
+
+
+13. Model Selection Strategy Used Across the Project
+----------------------------------------------------
+The project uses two main strategies:
+
+Tabular disease models:
+- Train several classical machine learning models.
+- Use preprocessing pipelines.
+- Use cross-validation and GridSearchCV.
+- Compare using accuracy or ROC AUC.
+- Save the best model as the default model for prediction.
+
+Image disease models:
+- Use transfer learning with pretrained CNNs.
+- Replace the final classification layer for the required disease classes.
+- Use augmentation to improve generalization.
+- Use Adam optimizer and learning-rate scheduling.
+- Save models in PyTorch formats for inference.
+
+
+14. Why Not Use One Huge Model for Everything?
+----------------------------------------------
+A single universal model was not used because each prediction task has different data:
+
+- Diabetes, heart, liver, kidney, lung, stroke, and thyroid use tabular numeric/categorical data.
+- Breast cancer, skin cancer, and brain tumor use images.
+- General disease prediction uses symptom vectors and has many output classes.
+
+Different data types require different model families. Tree-based models and linear/SVM models are better for structured tabular data, while CNN transfer learning models are better for image data.
+
+
+15. Practical Notes for Running and Sharing
+-------------------------------------------
+For a friend to run the full project, code alone is not enough if model/data folders are ignored from GitHub.
+
+The friend needs:
+- Source code from GitHub.
+- .env file with their own Supabase keys.
+- Node dependencies installed with npm install.
+- Python dependencies installed in a virtual environment.
+- Large folders copied separately:
+  - backend\data
+  - backend\model
+  - backend\models
+  - backend\saved_models
+
+Frontend command:
+npm run dev
+
+Backend command:
+.\myvenv\Scripts\python.exe -m uvicorn main:app --app-dir backend --host 127.0.0.1 --port 8001
+
+Recommended full sharing option:
+Use GitHub for the code and a pendrive or cloud drive for large datasets and model artifacts.
+
