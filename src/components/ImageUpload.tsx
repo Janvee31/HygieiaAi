@@ -115,23 +115,18 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         body: formData,
       });
 
-      // Even if the response is not OK, we'll still try to parse it
-      // This handles cases where the ML model is missing but Gemini analysis is still available
+      // Parse the response
       const result = await response.json();
       
       if (!response.ok) {
-        // If we have an analysis from Gemini, we'll still show it
+        // If we have an analysis, still show it
         if (result && result.analysis) {
-          console.warn('ML model error, but Gemini analysis available:', result);
-          // Add a note about the missing ML model
-          result.modelMissing = true;
+          console.warn('Server error, but analysis available:', result);
           onPredictionResult(result);
         } else {
-          // If we don't have an analysis, throw an error
           throw new Error(result.detail || 'Image processing failed');
         }
       } else {
-        // Normal successful case
         onPredictionResult(result);
       }
     } catch (error) {

@@ -60,22 +60,10 @@ const navItems = [
     image: '/images/lung.png'
   },
   {
-    name: 'Breast Cancer',
-    path: '/breast-cancer',
-    icon: '🧬',
-    image: '/images/breast.webp'
-  },
-  {
     name: 'Skin Cancer',
     path: '/skin-cancer',
     icon: '🩺',
     image: '/images/skin-cancer-awareness-month-scaled.jpeg'
-  },
-  {
-    name: 'Brain Tumor',
-    path: '/brain-tumor',
-    icon: '🧠',
-    image: '/images/mental.webp'
   },
   {
     name: 'Kidney Disease',

@@ -13,16 +13,7 @@ from typing import Optional
 from dotenv import load_dotenv
 import google.generativeai as genai
 
-try:
-    import torch
-    from torchvision import transforms
-    TORCH_AVAILABLE = True
-    TORCH_IMPORT_ERROR = None
-except Exception as exc:
-    torch = None
-    transforms = None
-    TORCH_AVAILABLE = False
-    TORCH_IMPORT_ERROR = exc
+# PyTorch dependency removed - all image analysis is now Gemini-powered
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -43,18 +34,22 @@ def build_structured_image_result(
     prediction=None,
     probability: float | None = None,
     detected_class: str | None = None,
-    model_missing: bool = False,
+    risk_level_override: str | None = None,
     note: str | None = None,
     error: str | None = None,
 ):
-    risk_level = "Unknown"
-    if probability is not None:
+    # Use explicit risk level if provided, otherwise calculate from probability
+    if risk_level_override and risk_level_override in ("Low", "Moderate", "High"):
+        risk_level = risk_level_override
+    elif probability is not None:
         if probability >= 0.7:
             risk_level = "High"
         elif probability >= 0.4:
             risk_level = "Moderate"
         else:
             risk_level = "Low"
+    else:
+        risk_level = "Unknown"
 
     if isinstance(prediction, bool):
         prediction_label = "Positive" if prediction else "Negative"
@@ -71,7 +66,6 @@ def build_structured_image_result(
         "probability": probability,
         "risk_level": risk_level,
         "class": detected_class,
-        "modelMissing": model_missing,
     }
 
     if note:
@@ -81,35 +75,7 @@ def build_structured_image_result(
 
     return result
 
-def load_pytorch_model(model_name):
-    """Load a PyTorch model from the saved_models directory"""
-    try:
-        if not TORCH_AVAILABLE:
-            logger.warning(f"PyTorch is unavailable for {model_name}: {TORCH_IMPORT_ERROR}")
-            return None, None
-
-        model_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 
-                               'saved_models', f'{model_name}_full.pth')
-        
-        # Check if model exists
-        if not os.path.exists(model_path):
-            logger.error(f"Model file not found: {model_path}")
-            return None, None
-            
-        # Load model
-        model = torch.load(model_path, map_location=torch.device('cpu'))
-        model.eval()
-        
-        # Load class mapping
-        class_mapping_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 
-                                       'saved_models', f'{model_name}_classes.json')
-        with open(class_mapping_path, 'r') as f:
-            class_mapping = json.load(f)
-            
-        return model, class_mapping
-    except Exception as e:
-        logger.error(f"Error loading PyTorch model {model_name}: {str(e)}\n{traceback.format_exc()}")
-        return None, None
+# load_pytorch_model removed - all image analysis is now Gemini-powered
 
 async def process_image_for_disease(image_data: bytes, disease_type: str):
     """
@@ -133,14 +99,8 @@ async def process_image_for_disease(image_data: bytes, disease_type: str):
             return process_kidney_image(img)
         elif disease_type == "parkinsons":
             return process_parkinsons_image(img)
-        elif disease_type == "breast":
-            return process_breast_cancer_image(img)
-        elif disease_type == "breast_cancer":
-            return process_breast_cancer_image(img)
         elif disease_type == "skin_cancer":
             return process_skin_cancer_image(img)
-        elif disease_type == "brain_tumor":
-            return process_brain_tumor_image(img)
         else:
             return process_general_disease_image(img)
     except Exception as e:
@@ -235,242 +195,114 @@ def process_parkinsons_image(img):
         probability=probability,
     )
 
-def process_breast_cancer_image(img):
-    """Process image for breast cancer detection using trained model"""
-    try:
-        if not TORCH_AVAILABLE or transforms is None:
-            analysis = get_gemini_analysis(img, "breast cancer")
-            return build_structured_image_result(
-                analysis=analysis,
-                disease="Breast Cancer Analysis",
-                prediction="Model unavailable",
-                probability=None,
-                detected_class="Unknown",
-                model_missing=True,
-                note="PyTorch is not installed, so fallback analysis was used",
-            )
-
-        # Load model
-        model, class_mapping = load_pytorch_model('breast_cancer')
-        if model is None:
-            # Fallback to Gemini API if model not found
-            analysis = get_gemini_analysis(img, "breast cancer")
-            return build_structured_image_result(
-                analysis=analysis,
-                disease="Breast Cancer Analysis",
-                prediction="Model unavailable",
-                probability=None,
-                detected_class="Unknown",
-                model_missing=True,
-                note="Using fallback analysis as model could not be loaded",
-            )
-        
-        # Preprocess image
-        img = cv2.resize(img, (224, 224))
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        
-        # Convert to PyTorch tensor
-        transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-        ])
-        
-        # Convert numpy array to PIL Image
-        pil_img = Image.fromarray(img)
-        tensor_img = transform(pil_img).unsqueeze(0)
-        
-        # Make prediction
-        with torch.no_grad():
-            outputs = model(tensor_img)
-            probs = torch.nn.functional.softmax(outputs, dim=1)
-            predicted_class = torch.argmax(probs, dim=1).item()
-            confidence = probs[0][predicted_class].item()
-        
-        # Get class name from mapping
-        prediction = class_mapping.get(str(predicted_class), "Unknown")
-        is_malignant = prediction == "MALIGNANT"
-        
-        # Get analysis from Gemini for additional context
-        analysis = get_gemini_analysis(img, "breast cancer")
-        
-        return build_structured_image_result(
-            analysis=analysis,
-            disease="Breast Cancer",
-            prediction=is_malignant,
-            probability=float(confidence),
-            detected_class=prediction,
-        )
-    except Exception as e:
-        logger.error(f"Error in breast cancer image processing: {str(e)}\n{traceback.format_exc()}")
-        # Fallback to Gemini API
-        analysis = get_gemini_analysis(img, "breast cancer")
-        return build_structured_image_result(
-            analysis=analysis,
-            disease="Breast Cancer Analysis",
-            prediction="Model unavailable",
-            probability=None,
-            detected_class="Unknown",
-            model_missing=True,
-            error=str(e),
-        )
 
 def process_skin_cancer_image(img):
-    """Process image for skin cancer detection using trained model"""
+    """Process image for skin cancer detection using Gemini AI analysis"""
     try:
-        if not TORCH_AVAILABLE or transforms is None:
-            analysis = get_gemini_analysis(img, "skin cancer")
-            return build_structured_image_result(
-                analysis=analysis,
-                disease="Skin Cancer Analysis",
-                prediction="Model unavailable",
-                probability=None,
-                detected_class="Unknown",
-                model_missing=True,
-                note="PyTorch is not installed, so fallback analysis was used",
-            )
+        # Use a structured prompt so we can parse confidence, risk, and type
+        analysis = get_gemini_analysis(img, "skin cancer", is_specific=True)
 
-        # Load model
-        model, class_mapping = load_pytorch_model('skin_cancer')
-        if model is None:
-            # Fallback to Gemini API if model not found
-            analysis = get_gemini_analysis(img, "skin cancer")
-            return build_structured_image_result(
-                analysis=analysis,
-                disease="Skin Cancer Analysis",
-                prediction="Model unavailable",
-                probability=None,
-                detected_class="Unknown",
-                model_missing=True,
-                note="Using fallback analysis as model could not be loaded",
-            )
-        
-        # Preprocess image
-        img = cv2.resize(img, (224, 224))
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        
-        # Convert to PyTorch tensor
-        transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-        ])
-        
-        # Convert numpy array to PIL Image
-        pil_img = Image.fromarray(img)
-        tensor_img = transform(pil_img).unsqueeze(0)
-        
-        # Make prediction
-        with torch.no_grad():
-            outputs = model(tensor_img)
-            probs = torch.nn.functional.softmax(outputs, dim=1)
-            predicted_class = torch.argmax(probs, dim=1).item()
-            confidence = probs[0][predicted_class].item()
-        
-        # Get class name from mapping
-        prediction = class_mapping.get(str(predicted_class), "Unknown")
-        is_malignant = prediction == "MALIGNANT"
-        
-        # Get analysis from Gemini for additional context
-        analysis = get_gemini_analysis(img, "skin cancer")
-        
+        # Parse structured fields from the analysis text
+        confidence = _extract_confidence(analysis)
+        risk_level = _extract_risk_level(analysis)
+        lesion_type = _extract_lesion_type(analysis)
+        is_positive = _extract_prediction(analysis)
+
+        # Use the specific lesion type as the disease name when available
+        disease_name = lesion_type if lesion_type and lesion_type != "Skin Lesion" else "Skin Cancer"
+
         return build_structured_image_result(
             analysis=analysis,
-            disease="Skin Cancer",
-            prediction=is_malignant,
-            probability=float(confidence),
-            detected_class=prediction,
+            disease=disease_name,
+            prediction=is_positive,
+            probability=confidence,
+            detected_class=lesion_type,
+            risk_level_override=risk_level,
         )
     except Exception as e:
         logger.error(f"Error in skin cancer image processing: {str(e)}\n{traceback.format_exc()}")
-        # Fallback to Gemini API
-        analysis = get_gemini_analysis(img, "skin cancer")
         return build_structured_image_result(
-            analysis=analysis,
-            disease="Skin Cancer Analysis",
-            prediction="Model unavailable",
+            analysis="Error generating analysis. Please try again.",
+            disease="Skin Cancer",
+            prediction=None,
             probability=None,
-            detected_class="Unknown",
-            model_missing=True,
             error=str(e),
         )
 
-def process_brain_tumor_image(img):
-    """Process image for brain tumor detection using trained model"""
-    try:
-        if not TORCH_AVAILABLE or transforms is None:
-            analysis = get_gemini_analysis(img, "brain tumor")
-            return build_structured_image_result(
-                analysis=analysis,
-                disease="Brain Tumor Analysis",
-                prediction="Model unavailable",
-                probability=None,
-                detected_class="Unknown",
-                model_missing=True,
-                note="PyTorch is not installed, so fallback analysis was used",
-            )
 
-        # Load model
-        model, class_mapping = load_pytorch_model('brain_tumor')
-        if model is None:
-            # Fallback to Gemini API if model not found
-            analysis = get_gemini_analysis(img, "brain tumor")
-            return build_structured_image_result(
-                analysis=analysis,
-                disease="Brain Tumor Analysis",
-                prediction="Model unavailable",
-                probability=None,
-                detected_class="Unknown",
-                model_missing=True,
-                note="Using fallback analysis as model could not be loaded",
-            )
-        
-        # Preprocess image
-        img = cv2.resize(img, (224, 224))
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        
-        # Convert to PyTorch tensor
-        transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-        ])
-        
-        # Convert numpy array to PIL Image
-        pil_img = Image.fromarray(img)
-        tensor_img = transform(pil_img).unsqueeze(0)
-        
-        # Make prediction
-        with torch.no_grad():
-            outputs = model(tensor_img)
-            probs = torch.nn.functional.softmax(outputs, dim=1)
-            predicted_class = torch.argmax(probs, dim=1).item()
-            confidence = probs[0][predicted_class].item()
-        
-        # Get class name from mapping
-        prediction = class_mapping.get(str(predicted_class), "Unknown")
-        is_tumor = prediction == "TUMOR"
-        
-        # Get analysis from Gemini for additional context
-        analysis = get_gemini_analysis(img, "brain tumor")
-        
-        return build_structured_image_result(
-            analysis=analysis,
-            disease="Brain Tumor",
-            prediction=is_tumor,
-            probability=float(confidence),
-            detected_class=prediction,
-        )
-    except Exception as e:
-        logger.error(f"Error in brain tumor image processing: {str(e)}\n{traceback.format_exc()}")
-        # Fallback to Gemini API
-        analysis = get_gemini_analysis(img, "brain tumor")
-        return build_structured_image_result(
-            analysis=analysis,
-            disease="Brain Tumor Analysis",
-            prediction="Model unavailable",
-            probability=None,
-            detected_class="Unknown",
-            model_missing=True,
-            error=str(e),
-        )
+# ── Helpers to extract structured fields from Gemini text ──────────────
+
+import re
+
+def _extract_confidence(text: str) -> float | None:
+    """Extract confidence percentage from analysis text (e.g. '85%', 'Confidence: 72%')."""
+    # Look for "Confidence: XX%" pattern first
+    m = re.search(r'[Cc]onfidence[:\s]*(\d{1,3})(?:\.\d+)?%', text)
+    if m:
+        return min(int(m.group(1)), 100) / 100.0
+    # Fall back to any percentage near confidence-related keywords
+    m = re.search(r'(\d{1,3})(?:\.\d+)?%\s*(?:confidence|certain|probability|likelihood)', text, re.IGNORECASE)
+    if m:
+        return min(int(m.group(1)), 100) / 100.0
+    # Fall back to any standalone percentage
+    matches = re.findall(r'(\d{1,3})(?:\.\d+)?%', text)
+    if matches:
+        val = max(int(x) for x in matches)
+        return min(val, 100) / 100.0
+    return 0.5  # default moderate confidence
+
+
+def _extract_risk_level(text: str) -> str:
+    """Extract risk level: Low, Moderate, or High."""
+    lower = text.lower()
+    # Check for explicit risk level mentions
+    if re.search(r'risk\s*(?:level)?[:\s]*high|high[\s-]*risk|severe|critical', lower):
+        return "High"
+    if re.search(r'risk\s*(?:level)?[:\s]*moderate|moderate[\s-]*risk|medium[\s-]*risk', lower):
+        return "Moderate"
+    if re.search(r'risk\s*(?:level)?[:\s]*low|low[\s-]*risk|minimal[\s-]*risk|benign', lower):
+        return "Low"
+    # If malignant is mentioned, default to High
+    if 'malignant' in lower or 'melanoma' in lower:
+        return "High"
+    if 'benign' in lower:
+        return "Low"
+    return "Moderate"
+
+
+def _extract_lesion_type(text: str) -> str | None:
+    """Extract specific lesion/cancer type from analysis text."""
+    lower = text.lower()
+    known_types = [
+        ("melanoma", "Melanoma"),
+        ("basal cell carcinoma", "Basal Cell Carcinoma"),
+        ("squamous cell carcinoma", "Squamous Cell Carcinoma"),
+        ("actinic keratosis", "Actinic Keratosis"),
+        ("seborrheic keratosis", "Seborrheic Keratosis"),
+        ("dermatofibroma", "Dermatofibroma"),
+        ("nevus", "Melanocytic Nevus"),
+        ("vascular lesion", "Vascular Lesion"),
+        ("benign keratosis", "Benign Keratosis"),
+        ("normal skin", "Normal Skin"),
+    ]
+    for pattern, label in known_types:
+        if pattern in lower:
+            return label
+    return "Skin Lesion"
+
+
+def _extract_prediction(text: str) -> bool:
+    """Determine if the analysis indicates a positive (malignant/concerning) finding."""
+    lower = text.lower()
+    negative_indicators = ['benign', 'non-cancerous', 'no signs of cancer', 'no malignancy',
+                          'not cancerous', 'no evidence of cancer', 'unlikely to be cancerous',
+                          'no indication of skin cancer']
+    positive_indicators = ['malignant', 'cancerous', 'melanoma', 'carcinoma',
+                          'signs of cancer', 'suspicious', 'concerning', 'precancerous',
+                          'potentially malignant']
+    pos_count = sum(1 for p in positive_indicators if p in lower)
+    neg_count = sum(1 for n in negative_indicators if n in lower)
+    return pos_count > neg_count
 
 def process_general_disease_image(img):
     """Process image for general disease detection"""
@@ -512,7 +344,22 @@ def get_gemini_analysis(img, disease_type: str, is_specific: bool = False) -> st
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
         
         prompt_text = ""
-        if is_specific and disease_type == "diabetes":
+        if is_specific and disease_type == "skin cancer":
+            prompt_text = (
+                "You are a dermatology AI assistant. Analyze this skin image for signs of skin cancer or lesions.\n\n"
+                "You MUST include ALL of the following labeled fields in your response, each on its own line:\n\n"
+                "Confidence: <number>%\n"
+                "Risk Level: <Low or Moderate or High>\n"
+                "Lesion Type: <specific type, e.g. Melanoma, Basal Cell Carcinoma, Squamous Cell Carcinoma, Actinic Keratosis, Seborrheic Keratosis, Melanocytic Nevus, Dermatofibroma, Benign Keratosis, Vascular Lesion, or Normal Skin>\n"
+                "Prediction: <Positive or Negative> (Positive means signs of cancer/malignancy detected, Negative means benign/no cancer)\n\n"
+                "After these fields, provide:\n"
+                "1. Detailed Analysis: Describe all visible features, color, border irregularity, asymmetry, diameter, and any other ABCDE criteria observations.\n"
+                "2. Recommendations: Suggest next steps (biopsy, dermatologist visit, monitoring, etc.).\n"
+                "3. Precautions: Lifestyle and prevention tips.\n\n"
+                "Be honest about your confidence level. If the image is unclear or not a skin image, set Confidence low and explain why.\n"
+                "Do NOT use markdown formatting (no **, no ##, no bullet points with *)."
+            )
+        elif is_specific and disease_type == "diabetes":
             prompt_text = (
                 "Analyze this image for diabetes-related information. "
                 "First, determine if this is: (1) a medical image showing physical symptoms of diabetes, "

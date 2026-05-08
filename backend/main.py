@@ -6,6 +6,9 @@ import numpy as np
 import logging
 import traceback
 import pandas as pd
+import json
+import subprocess
+import tempfile
 
 # Use local imports
 from helper import prepare_symptoms_array
@@ -42,6 +45,10 @@ class DiabetesInput(BaseModel):
 
     class Config:
         allow_population_by_field_name = True
+
+class ZKPDiabetesInput(BaseModel):
+    proof: dict
+    publicSignals: list[str]
 
 class HeartInput(BaseModel):
     age: float
@@ -346,6 +353,122 @@ async def predict_diabetes(data: DiabetesInput):
         import traceback
         print(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/predict/diabetes/zkp")
+async def predict_diabetes_zkp(data: ZKPDiabetesInput):
+    """ZKP-verified diabetes prediction.
+    
+    Verifies a Groth16 proof (generated client-side by snarkjs) that
+    the patient's health inputs are within valid medical ranges.
+    If the proof is valid, extracts values from publicSignals and
+    runs the ML prediction model.
+    """
+    proof_path = None
+    public_path = None
+    try:
+        # ── 1. Write proof & public signals to temp files ─────────
+        proof_fd, proof_path = tempfile.mkstemp(suffix='.json')
+        with os.fdopen(proof_fd, 'w') as f:
+            json.dump(data.proof, f)
+
+        public_fd, public_path = tempfile.mkstemp(suffix='.json')
+        with os.fdopen(public_fd, 'w') as f:
+            json.dump(data.publicSignals, f)
+
+        # ── 2. Locate verification key ────────────────────────────
+        import os as _os
+        vk_path = _os.path.join(
+            _os.path.dirname(_os.path.abspath(__file__)),
+            'zkp', 'artifacts', 'verification_key.json'
+        )
+        if not _os.path.exists(vk_path):
+            raise HTTPException(
+                status_code=500,
+                detail="ZKP verification key not found. Run build_circuit.sh first."
+            )
+
+        # ── 3. Verify proof via snarkjs CLI ───────────────────────
+        result = subprocess.run(
+            f'npx snarkjs groth16 verify "{vk_path}" "{public_path}" "{proof_path}"',
+            capture_output=True,
+            text=True,
+            timeout=30,
+            shell=True,
+        )
+
+        if 'OK' not in result.stdout:
+            logger.warning(f"ZKP verification failed. stdout: {result.stdout}, stderr: {result.stderr}")
+            raise HTTPException(
+                status_code=403,
+                detail="ZKP proof verification failed. Data integrity could not be confirmed."
+            )
+
+        logger.info("ZKP proof verified successfully")
+
+        # ── 4. Extract values from public signals ─────────────────
+        # Public signals order matches circuit output declaration:
+        #   [0] outPregnancies
+        #   [1] outGlucose
+        #   [2] outBloodPressure
+        #   [3] outSkinThickness
+        #   [4] outInsulin
+        #   [5] outBmi            (scaled ×10)
+        #   [6] outDiabetesPedigree (scaled ×1000)
+        #   [7] outAge
+        signals = [int(s) for s in data.publicSignals]
+        pregnancies      = float(signals[0])
+        glucose          = float(signals[1])
+        blood_pressure   = float(signals[2])
+        skin_thickness   = float(signals[3])
+        insulin          = float(signals[4])
+        bmi              = float(signals[5]) / 10.0
+        dpf              = float(signals[6]) / 1000.0
+        age              = float(signals[7])
+
+        # ── 5. Run ML prediction with verified values ─────────────
+        import os
+        model_path = os.path.join(os.path.dirname(__file__), 'saved_models/diabetes_model.sav')
+
+        if not os.path.exists(model_path):
+            logger.warning(f"Model file not found at {model_path}, returning mock prediction")
+            return {
+                "prediction": True,
+                "risk_level": "Medium",
+                "probability": 0.75,
+                "zkp_verified": True,
+            }
+
+        model = joblib.load(model_path)
+        features = np.array([[
+            pregnancies, glucose, blood_pressure, skin_thickness,
+            insulin, bmi, dpf, age
+        ]])
+
+        prediction = model.predict(features)
+        decision_score = model.decision_function(features)[0]
+        probability = 1 / (1 + np.exp(-decision_score))
+        risk_level = get_risk_level(probability)
+
+        return {
+            "prediction": bool(prediction[0]),
+            "probability": float(probability),
+            "risk_level": risk_level,
+            "zkp_verified": True,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in predict_diabetes_zkp: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        # Clean up temp files
+        import os as _os2
+        if proof_path and _os2.path.exists(proof_path):
+            _os2.unlink(proof_path)
+        if public_path and _os2.path.exists(public_path):
+            _os2.unlink(public_path)
 
 @app.post("/predict/heart")
 async def predict_heart(data: HeartInput):

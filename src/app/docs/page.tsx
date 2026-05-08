@@ -162,8 +162,6 @@ function OverviewSection({}: OverviewSectionProps) {
           <DiseaseCard icon="❤️" name="Heart Disease" />
           <DiseaseCard icon="🫁" name="Liver Disease" />
           <DiseaseCard icon="🫀" name="Lung Cancer" />
-          <DiseaseCard icon="🧬" name="Breast Cancer" />
-          <DiseaseCard icon="🧠" name="Brain Tumor" />
           <DiseaseCard icon="🦠" name="Kidney Disease" />
           <DiseaseCard icon="🔬" name="General Disease" />
           <DiseaseCard icon="🩸" name="Thyroid" />
@@ -241,22 +239,6 @@ function ModelsSection({}: ModelsSectionProps) {
           accuracy="91.3%"
           features={["Smoking History", "Age", "Genetic Risk", "Chronic Disease", "Passive Smoker"]}
           description="The lung cancer prediction model combines patient history with imaging data analysis to detect early signs of lung cancer, with particular focus on high-risk populations."
-        />
-        
-        <ModelCard 
-          title="Breast Cancer Detection" 
-          algorithms={["CNN", "ResNet50", "Vision Transformer"]}
-          accuracy="95.2%"
-          features={["Histopathology Images", "Tumor Patterns", "Cell Morphology", "Tissue Structure"]}
-          description="Our image-based breast cancer detection model analyzes histopathology images to identify malignant patterns with high accuracy, enabling early detection and treatment planning."
-        />
-        
-        <ModelCard 
-          title="Brain Tumor Detection" 
-          algorithms={["CNN", "MobileNetV2", "Transfer Learning"]}
-          accuracy="94.8%"
-          features={["MRI Scans", "Tumor Location", "Tumor Size", "Tissue Characteristics"]}
-          description="The brain tumor detection model uses advanced image processing to analyze MRI scans and identify potential tumors, providing critical early detection for various types of brain tumors."
         />
         
         <ModelCard 

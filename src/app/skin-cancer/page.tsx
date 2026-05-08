@@ -178,21 +178,19 @@ export default function SkinCancerPage() {
   ];
 
   // Custom prompt for skin cancer images
-  const skinCancerPrompt = `You are analyzing a dermatological image that has already been processed by our ML model for skin cancer detection. The ML model results will be provided to you if available.
-  
-  Your task is to provide a comprehensive analysis that builds upon the ML model's findings (if available) or provides a standalone assessment (if ML results are unavailable).
+  const skinCancerPrompt = `Analyze this dermatological image for signs of skin cancer or abnormalities.
   
   Provide a detailed analysis with the following sections:
   
-  1) Prediction: State whether the image shows signs of skin cancer or not. If ML model results are available, incorporate this information.
+  1) Prediction: State whether the image shows signs of skin cancer or not.
   
-  2) Confidence: Provide a percentage indicating your confidence level in the assessment. If ML model confidence is available, reference it and provide your own assessment.
+  2) Confidence: Provide a percentage indicating your confidence level in the assessment.
   
   3) Type: Specify the exact type of skin lesion or cancer identified, if any (e.g., melanoma, basal cell carcinoma, squamous cell carcinoma, etc.).
   
   4) Risk Level: Indicate the severity or risk level (Low, Moderate, High) based on the findings.
   
-  5) Detailed Analysis: Provide a thorough description of all visible features, abnormalities, and diagnostic insights. If the ML model has identified specific features, elaborate on these.
+  5) Detailed Analysis: Provide a thorough description of all visible features, abnormalities, and diagnostic insights.
   
   6) Recommendations: Suggest appropriate next steps, further tests, or treatments.
   
@@ -325,8 +323,8 @@ export default function SkinCancerPage() {
             <AnimatePresence mode="wait">
               <motion.div
                 key="analysis-container"
-                initial="collapsed"
-                animate={skinCancerAnalysis ? "expanded" : "collapsed"}
+                initial="expanded"
+                animate="expanded"
                 exit="collapsed"
                 variants={cardVariants}
                 className="glass p-6 rounded-2xl border border-white/10 overflow-hidden h-full"
@@ -356,7 +354,7 @@ export default function SkinCancerPage() {
                 ) : (
                   <div className="flex flex-col items-center justify-center text-center h-full py-8">
                     <Image 
-                      src="/images/skin.webp" 
+                      src="/images/skin.jpeg" 
                       alt="Skin Cancer Analysis" 
                       width={150} 
                       height={150}

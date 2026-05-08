@@ -9,7 +9,6 @@ import {
   FaExclamationTriangle, 
   FaFileAlt, 
   FaImage,
-  FaInfoCircle,
   FaPercentage,
   FaCheckCircle
 } from 'react-icons/fa';
@@ -378,8 +377,6 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ analysis, diseaseType =
   // Convert diseaseType to a more readable format for display
   const diseaseTypeLabel = {
     'skin_cancer': 'Skin Cancer',
-    'brain_tumor': 'Brain Tumor',
-    'breast_cancer': 'Breast Cancer',
     'medical': 'Medical',
     'diabetes': 'Diabetes',
     'heart_disease': 'Heart Disease',
@@ -414,20 +411,18 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ analysis, diseaseType =
   const structuredInfo = result ? {
     probability: typeof result.probability === 'number' ? String(Math.round(result.probability * 100)) : undefined,
     disease: result.disease || result.class,
-    risk: result.modelMissing ? undefined : result.risk_level,
+    risk: result.risk_level,
     riskLevel:
-      result.modelMissing ? undefined :
       result.risk_level === 'Low' ? 'low' :
       result.risk_level === 'Moderate' ? 'medium' :
       result.risk_level === 'High' ? 'high' :
       undefined
   } : {};
-  const isModelFallback = Boolean(result?.modelMissing);
   const displayInfo = {
-    probability: structuredInfo.probability || (isModelFallback ? undefined : predictionInfo.probability),
+    probability: structuredInfo.probability || predictionInfo.probability,
     disease: structuredInfo.disease || predictionInfo.disease,
-    risk: structuredInfo.risk || (isModelFallback ? undefined : predictionInfo.risk),
-    riskLevel: structuredInfo.riskLevel || (isModelFallback ? undefined : predictionInfo.riskLevel),
+    risk: structuredInfo.risk || predictionInfo.risk,
+    riskLevel: structuredInfo.riskLevel || predictionInfo.riskLevel,
   };
   
   // Determine if diabetes is present based on the analysis
@@ -456,10 +451,6 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ analysis, diseaseType =
 
   // Get a simplified disease name (1-2 words)
   const getSimplifiedDisease = () => {
-    if (isModelFallback) {
-      return diseaseTypeLabel;
-    }
-
     if (!displayInfo.disease) return 'Unknown';
     
     // If already short, return as is
@@ -514,10 +505,6 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ analysis, diseaseType =
   
   // Get simplified risk level
   const getSimplifiedRisk = () => {
-    if (isModelFallback) {
-      return 'Limited';
-    }
-
     if (displayInfo.riskLevel) {
       return displayInfo.riskLevel.charAt(0).toUpperCase() + displayInfo.riskLevel.slice(1);
     }
@@ -566,22 +553,6 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ analysis, diseaseType =
         </div>
       )}
       
-      {/* Warning for missing ML model */}
-      {result?.modelMissing && (
-        <div className="glass p-4 rounded-xl mb-4 border border-blue-500/30 bg-blue-500/10">
-          <div className="flex gap-2">
-            <FaInfoCircle className="text-blue-500 shrink-0 mt-1" />
-            <div>
-              <h3 className="font-medium text-blue-500">ML Model Unavailable</h3>
-              <p className="text-white/70 text-sm">
-                The ML model for {diseaseTypeLabel} prediction is currently unavailable. 
-                We're still providing an AI analysis of your image using Gemini, but specific 
-                prediction metrics may be limited.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Image Analysis Summary Card */}
       {!isDiabetesReport && !isUnrelated && (

@@ -1,0 +1,2 @@
+# ZKP artifacts directory
+# Copy compiled .wasm and .zkey files here after running build_circuit.sh

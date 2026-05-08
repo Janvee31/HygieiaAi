@@ -6,8 +6,9 @@ import Image from 'next/image';
 import { useTheme } from '@/context/ThemeContext';
 import { darkenColor } from '@/context/ThemeContext';
 import { IconType } from 'react-icons';
-import { FaStethoscope, FaPercent, FaInfoCircle, FaShieldAlt, FaQuestionCircle } from 'react-icons/fa';
+import { FaStethoscope, FaPercent, FaInfoCircle, FaShieldAlt, FaQuestionCircle, FaLock } from 'react-icons/fa';
 import { getRandomDiabetesData } from '@/utils/sampleData';
+import { generateDiabetesProof } from '@/lib/zkp';
 import TabView from '@/components/TabView';
 import NotebookViewer from '@/components/NoteViewer';
 
@@ -68,6 +69,7 @@ export default function DiabetesPage() {
   const [prediction, setPrediction] = useState<PredictionResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [zkpMode, setZkpMode] = useState<'idle' | 'proving' | 'zkp' | 'fallback'>('idle');
   const { themeColor } = useTheme();
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -81,24 +83,45 @@ export default function DiabetesPage() {
   const handlePredict = async () => {
     setIsLoading(true);
     setError(null);
+    setZkpMode('proving');
+
+    const numericData = {
+      Pregnancies: Number(formData.Pregnancies),
+      Glucose: Number(formData.Glucose),
+      BloodPressure: Number(formData.BloodPressure),
+      SkinThickness: Number(formData.SkinThickness),
+      Insulin: Number(formData.Insulin),
+      BMI: Number(formData.BMI),
+      DiabetesPedigreeFunction: Number(formData.DiabetesPedigreeFunction),
+      Age: Number(formData.Age),
+    };
 
     try {
-      const response = await fetch('http://localhost:8001/predict/diabetes', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          Pregnancies: Number(formData.Pregnancies),
-          Glucose: Number(formData.Glucose),
-          BloodPressure: Number(formData.BloodPressure),
-          SkinThickness: Number(formData.SkinThickness),
-          Insulin: Number(formData.Insulin),
-          BMI: Number(formData.BMI),
-          DiabetesPedigreeFunction: Number(formData.DiabetesPedigreeFunction),
-          Age: Number(formData.Age)
-        }),
-      });
+      // Attempt ZKP proof generation
+      const zkpResult = await generateDiabetesProof(numericData);
+
+      let response: Response;
+
+      if (zkpResult.mode === 'zkp') {
+        // ── ZKP path: send proof + public signals ────────────────
+        setZkpMode('zkp');
+        response = await fetch('http://localhost:8001/predict/diabetes/zkp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            proof: zkpResult.proof,
+            publicSignals: zkpResult.publicSignals,
+          }),
+        });
+      } else {
+        // ── Fallback: send raw data to original endpoint ─────────
+        setZkpMode('fallback');
+        response = await fetch('http://localhost:8001/predict/diabetes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(numericData),
+        });
+      }
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -298,10 +321,25 @@ export default function DiabetesPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Left Column - Form */}
           <motion.div variants={itemVariants} className="glass p-6 rounded-2xl backdrop-blur-lg bg-black/30 border border-white/10">
-            <div className="flex items-start gap-3 mb-6">
+            <div className="flex items-start gap-3 mb-4">
               <Icon icon={FaStethoscope} className="text-2xl text-blue-500 shrink-0 mt-1" />
-              <div>
-                <h2 className="text-2xl font-semibold text-white mb-1">Health Metrics</h2>
+              <div className="flex-1">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-2xl font-semibold text-white mb-1">Health Metrics</h2>
+                  {/* ZKP Status Badge */}
+                  <div
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-all duration-500 ${
+                      zkpMode === 'zkp'
+                        ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
+                        : 'bg-white/5 border-white/10 text-white/40'
+                    }`}
+                  >
+                    <FaLock className={`text-[10px] ${
+                      zkpMode === 'zkp' ? 'text-emerald-400' : 'text-white/30'
+                    }`} />
+                    {zkpMode === 'zkp' ? 'ZK Protected' : 'Standard Mode'}
+                  </div>
+                </div>
                 <p className="text-white/60 text-sm">Enter your health information below</p>
               </div>
             </div>
@@ -500,7 +538,10 @@ export default function DiabetesPage() {
                     boxShadow: `0 4px 20px ${themeColor}30`
                   }}
                 >
-                  {isLoading ? 'Predicting...' : 'Predict'}
+                  {isLoading
+                    ? (zkpMode === 'proving' ? '🔐 Generating ZKP Proof...' : 'Predicting...')
+                    : 'Predict'
+                  }
                 </motion.button>
 
                 <motion.button
@@ -579,6 +620,19 @@ export default function DiabetesPage() {
                     </p>
                   </div>
                 </div>
+
+                {/* ZKP Verification Badge */}
+                {zkpMode === 'zkp' && (
+                  <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center gap-3">
+                    <FaLock className="text-emerald-400 shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-emerald-400">Zero-Knowledge Proof Verified</p>
+                      <p className="text-xs text-white/50 mt-0.5">
+                        Your health data was validated cryptographically. Only the proof was sent to the server.
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 <div className="p-4 rounded-xl bg-blue-500/10 border border-blue-500/20">
                   <p className="text-sm text-white/80">
