@@ -160,7 +160,7 @@ All models undergo rigorous validation using k-fold cross-validation, confusion 
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/Sayandip-Jana-1018/Hygieia-Ai.git
+git clone https://github.com/Janvee31/Hygieia-Ai.git
 cd Hygieia-Ai
 ```
 
